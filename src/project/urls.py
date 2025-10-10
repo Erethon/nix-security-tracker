@@ -15,13 +15,18 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 
+from allauth import urls as allauth_urls
+from debug_toolbar import urls as debug_toolbar_urls
 from django.contrib import admin
 from django.urls import include, path
 
+from shared import urls as shared_urls
+from webview import urls as webview_urls
+
 urlpatterns = [
-    path("", include("webview.urls")),
-    path("api/", include("shared.urls")),
+    path("", include(webview_urls)),
+    path("api/", include(shared_urls)),
     path("admin/", admin.site.urls),
-    path("accounts/", include("allauth.urls")),
-    path("debug/", include("debug_toolbar.urls")),
+    path("accounts/", include(allauth_urls)),
+    path("debug/", include(debug_toolbar_urls)),
 ]

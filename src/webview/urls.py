@@ -1,10 +1,11 @@
-from django.urls import path, re_path
+from django.urls import include, path, re_path
 from django.views.generic.base import RedirectView
 
 from shared.auth.github_webhook import handle_github_hook
 from shared.models.linkage import (
     CVEDerivationClusterProposal,
 )
+from webview.notifications import urls as notifications_urls
 from webview.views import (
     AddMaintainerView,
     HomeView,
@@ -21,6 +22,7 @@ app_name = "webview"
 
 urlpatterns = [
     path("", HomeView.as_view(), name="home"),
+    path("notifications/", include(notifications_urls)),
     path("triage/", TriageView.as_view(), name="triage_view"),
     path("issues/", NixpkgsIssueListView.as_view(), name="issue_list"),
     re_path(
