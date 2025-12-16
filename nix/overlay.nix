@@ -47,6 +47,8 @@ in
       sentry-sdk
       django-pghistory
       django-pgtrigger
+      pytest
+      pytest-django
     ];
 
     postInstall = ''
