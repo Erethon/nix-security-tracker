@@ -24,7 +24,7 @@ jobs:
         with:
           # Discard `GITHUB_TOKEN` after this step, as we don't need it
           persist-credentials: false
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31.9.0
       - name: Check workflow files
         run: |
           NIXPKGS=$(nix-instantiate --eval -A pkgs.path)
