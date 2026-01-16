@@ -21,8 +21,8 @@ jobs:
             host: tracker.security.nixos.org
             branch: production
     steps:
-      - uses: actions/checkout@v4
       - uses: webfactory/ssh-agent@v0.9.0
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       - uses: cachix/install-nix-action@4e002c8ec80594ecd40e759629461e26c8abed15 # v31.9.0
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
