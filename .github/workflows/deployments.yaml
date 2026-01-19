@@ -26,8 +26,16 @@ jobs:
       - uses: webfactory/ssh-agent@a6f90b1f127823b31d4d4a8d96047790581349bd # v0.9.1
         with:
           ssh-private-key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
-      - name: Trust staging server public SSH host keys
+      - name: Trust server's public SSH host keys
         run: cat ./infra/host_keys >> ~/.ssh/known_hosts
+      - name: Set a shorter SSH ControlPath
+        run: |
+          cat >> ~/.ssh/config <<EOF
+          Host *.security.nixos.org
+            ControlMaster auto
+            ControlPath /tmp/ssh-%r@%h:%p
+            ControlPersist 10m
+          EOF
       - name: Deploy to ${{ matrix.environment }}
         # Only deploy production when on production branch
         if: github.ref_name == matrix.branch
