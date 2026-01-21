@@ -102,6 +102,7 @@ in
       GH_SECURITY_TEAM = "sectracker-testing-security";
       # set to `nixpkgs-committers` when going live
       GH_COMMITTERS_TEAM = "sectracker-testing-committers";
+      EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend";
     };
 
     secrets = {
