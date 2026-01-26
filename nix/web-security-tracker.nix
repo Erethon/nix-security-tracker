@@ -194,6 +194,7 @@ in
           locations = {
             "/".proxyPass = "http://localhost:${toString cfg.wsgi-port}";
             "/static/".alias = cfg.settings.STATIC_ROOT;
+            "/admin/".return = 403;
           };
         }
         // lib.optionalAttrs cfg.production {
