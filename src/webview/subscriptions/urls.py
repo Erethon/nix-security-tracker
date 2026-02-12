@@ -20,6 +20,6 @@ urlpatterns = [
         name="toggle_auto_subscribe",
     ),
     path(
-        "package/<str:package_name>/", PackageSubscriptionView.as_view(), name="package"
+        "package/<path:package_name>/", PackageSubscriptionView.as_view(), name="package"
     ),
 ]
