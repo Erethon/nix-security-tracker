@@ -486,8 +486,6 @@ SITE_ID = 1
 
 # Disable regular signup but allow GitHub auth
 SOCIALACCOUNT_ONLY = True
-# Skip intermediate "Continue" page, redirect to GitHub immediately
-SOCIALACCOUNT_LOGIN_ON_GET = True
 ACCOUNT_ALLOW_REGISTRATION = False
 ACCOUNT_EMAIL_VERIFICATION = "none"
 
