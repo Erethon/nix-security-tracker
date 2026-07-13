@@ -8,6 +8,7 @@ let
   inherit (lib)
     types
     mkIf
+    mkMerge
     mkEnableOption
     mkPackageOption
     mkOption
@@ -16,6 +17,7 @@ let
     mkDefault
     concatStringsSep
     recursiveUpdate
+    optionalAttrs
     optionalString
     ;
   inherit (pkgs) writeScriptBin writeShellApplication stdenv;
@@ -59,6 +61,20 @@ let
   };
   credentials = mapAttrsToList (name: secretPath: "${name}:${secretPath}") cfg.secrets;
   databaseUrl = "postgres:///nix-security-tracker";
+  # When PgBouncer is enabled, the ASGI server connects through it over its
+  # unix socket on port 6432
+  pgbouncerDatabaseUrl =
+    "postgres:///nix-security-tracker?host=/run/pgbouncer&port=6432";
+  # The ASGI server should not hold Django-level persistent connections when
+  # PgBouncer multiplexes server connections. Setting CONN_MAX_AGE=0 lets
+  # PgBouncer do the pooling. Other services (workers and management commands)
+  # keep the value from `cfg.settings` so their direct connections persist.
+  serverDjangoSettingsJson = builtins.toJSON (
+    cfg.settings // { DATABASE_CONN_MAX_AGE = 0; }
+  );
+  pgbouncerAuthFile = pkgs.writeText "pgbouncer-userlist" ''
+    "nix-security-tracker" ""
+  '';
 
   # This script has access to the credentials, no matter where it is.
   wstExternalManageScript = writeScriptBin "wst-manage" ''
@@ -181,6 +197,33 @@ in
       type = types.int;
       default = 2;
     };
+
+    enablePgbouncer = mkEnableOption ''
+      PgBouncer connection pooling in front of PostgreSQL for the ASGI web server.
+
+      When enabled, only `nix-security-tracker-server` connects through
+      PgBouncer. The pgpubsub workers and management commands keep direct database
+      connections, which is required for PostgreSQL LISTEN/NOTIFY.
+    '';
+
+    pgbouncer = {
+      defaultPoolSize = mkOption {
+        type = types.int;
+        default = 50;
+      };
+      maxClientConn = mkOption {
+        type = types.int;
+        default = 500;
+      };
+      reservePoolSize = mkOption {
+        type = types.int;
+        default = 10;
+      };
+      maxPreparedStatements = mkOption {
+        type = types.int;
+        default = 1000;
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -238,6 +281,28 @@ in
         ];
         ensureDatabases = [ "nix-security-tracker" ];
       };
+
+      # PgBouncer fronts only the ASGI web server. Workers and management
+      # commands bypass it.
+      pgbouncer = mkIf cfg.enablePgbouncer {
+        enable = true;
+        settings = {
+          pgbouncer = {
+            pool_mode = "transaction";
+            auth_type = "trust";
+            auth_file = toString pgbouncerAuthFile;
+            max_client_conn = cfg.pgbouncer.maxClientConn;
+            default_pool_size = cfg.pgbouncer.defaultPoolSize;
+            reserve_pool_size = cfg.pgbouncer.reservePoolSize;
+            max_prepared_statements = cfg.pgbouncer.maxPreparedStatements;
+            ignore_startup_parameters = "extra_float_digits";
+          };
+          databases = {
+            nix-security-tracker =
+              "host=/run/postgresql dbname=nix-security-tracker";
+          };
+        };
+      };
     };
 
     users.users.nix-security-tracker = {
@@ -268,7 +333,8 @@ in
           };
         };
       in
-      mapAttrs (_: recursiveUpdate defaults) {
+      mkMerge [
+        (mapAttrs (_: recursiveUpdate defaults) {
         nix-security-tracker-migrations = {
           description = "Web security tracker - database migrations";
           after = [
@@ -296,11 +362,11 @@ in
             "network.target"
             "postgresql.service"
             "nix-security-tracker-migrations.service"
-          ];
+          ] ++ lib.optionals cfg.enablePgbouncer [ "pgbouncer.service" ];
           requires = [
             "postgresql.service"
             "nix-security-tracker-migrations.service"
-          ];
+          ] ++ lib.optionals cfg.enablePgbouncer [ "pgbouncer.service" ];
           wantedBy = [ "multi-user.target" ];
           serviceConfig = {
             Restart = cfg.restart;
@@ -317,6 +383,10 @@ in
             ''
               daphne ${networking} project.asgi:application
             '';
+        }
+        // optionalAttrs cfg.enablePgbouncer {
+          environment.DATABASE_URL = pgbouncerDatabaseUrl;
+          environment.DJANGO_SETTINGS = serverDjangoSettingsJson;
         };
 
         nix-security-tracker-evaluator = {
@@ -500,6 +570,15 @@ in
           # The time is almost arbitrary, just keep it out of the way of ingestions and peak traffic.
           startAt = "Fri *-*-* 20:00:00";
         };
-      };
+        })
+        (optionalAttrs cfg.enablePgbouncer {
+          # Make PgBouncer wait for PostgreSQL so the web server can rely on
+          # the `pgbouncer.service` ordering declared above.
+          pgbouncer = {
+            after = [ "postgresql.service" ];
+            requires = [ "postgresql.service" ];
+          };
+        })
+      ];
   };
 }
