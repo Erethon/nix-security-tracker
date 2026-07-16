@@ -99,6 +99,9 @@ in
     enable = true;
     production = true;
     domain = "tracker.security.nixos.org";
+
+    enablePgbouncer = false;
+
     settings = {
       SYNC_GITHUB_STATE_AT_STARTUP = true;
       GH_ISSUES_PING_MAINTAINERS = true;
