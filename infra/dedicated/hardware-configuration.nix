@@ -25,6 +25,7 @@
   boot.extraModulePackages = [ ];
   boot = {
     supportedFilesystems.zfs = true;
+    zfs.forceImportRoot = false;
     loader = {
       grub = {
         enable = true;
