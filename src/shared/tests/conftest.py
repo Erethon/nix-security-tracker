@@ -1,4 +1,5 @@
 import secrets
+from collections import defaultdict
 from collections.abc import Callable
 from datetime import timedelta
 from typing import ParamSpec
@@ -29,6 +30,7 @@ from shared.models.issue import NixpkgsIssue
 from shared.models.linkage import (
     CVEDerivationClusterProposal,
     DerivationClusterProposalLink,
+    PackageClusterProposalLink,
     ProvenanceFlags,
 )
 from shared.models.nix_evaluation import (
@@ -39,7 +41,7 @@ from shared.models.nix_evaluation import (
     NixMaintainer,
     NixpkgsBranch,
 )
-from shared.models.package import Package, PackageAttrpath
+from shared.models.package import Package, PackageAttrpath, PackageDerivation
 from shared.notify_users import create_package_subscription_notifications
 from webview.models import SuggestionNotification as Notification
 
@@ -81,6 +83,7 @@ def make_container(
         affected_version: str = "1.0",
         package_name: str | None = "foo",
         product: str | None = "bar",
+        extra_affected: list[tuple[str, list[tuple[str, str]]]] = [],
         references: list[tuple[str, str, list[str]]] = [],
         cpes: list[str] = [],
         metrics: list[Metric] = make_metrics([cvss_v3_metric, cvss_v4_metric]),
@@ -104,6 +107,16 @@ def make_container(
             cpe, _ = Cpe.objects.get_or_create(name=cpe_name)
             affected.cpes.add(cpe)
 
+        # Additional products, each with its own version constraints
+        extra_affected_objects = []
+        for extra_name, constraints in extra_affected:
+            extra = AffectedProduct.objects.create(package_name=extra_name)
+            for status, constraint_version in constraints:
+                extra.versions.add(
+                    Version.objects.create(status=status, version=constraint_version)
+                )
+            extra_affected_objects.append(extra)
+
         container = cve.container.create(provider=org, title=title)
         refs = []
         for text, link, tags in references:
@@ -118,6 +131,8 @@ def make_container(
             refs.append(ref)
         container.references.set(refs)
         container.affected.add(affected)
+        for extra in extra_affected_objects:
+            container.affected.add(extra)
         if description is not None:
             desc = Description.objects.create(value=description)
             container.descriptions.add(desc)
@@ -272,6 +287,7 @@ def make_drv(
         known_vulnerabilities: list[str] | None = None,
         cpe_vendor: str | None = None,
         cpe_product: str | None = None,
+        position: str | None = None,
     ) -> NixDerivation:
         meta = NixDerivationMeta.objects.create(
             description=description,
@@ -284,6 +300,7 @@ def make_drv(
             known_vulnerabilities=known_vulnerabilities or [],
             cpe_vendor=cpe_vendor,
             cpe_product=cpe_product,
+            position=position,
         )
         meta.maintainers.add(maintainer)
 
@@ -312,20 +329,24 @@ def drv(
 @pytest.fixture
 def make_package(db: None) -> Callable[..., Package]:
     def wrapped(
-        drv: NixDerivation,
+        *drvs: NixDerivation,
+        name: str | None = None,
         homepage: str | None = None,
         description: str | None = "My package",
         attrpath: str | None = None,
     ) -> Package:
-        pname, _ = parse_drv_name(drv.name)
+        if name is None:
+            assert len(drvs) == 1, "name is ambiguous for multiple derivations"
+            name, _ = parse_drv_name(drvs[0].name)
         if not homepage:
-            homepage = f"https://example.com/{pname}"
+            homepage = f"https://example.com/{name}"
         pkg = Package.objects.create(
-            name=pname,
+            name=name,
             homepage=homepage,
             description=description,
         )
-        PackageAttrpath.objects.create(package=pkg, attrpath=attrpath or drv.attribute)
+        for path in {attrpath} if attrpath else {drv.attribute for drv in drvs}:
+            PackageAttrpath.objects.create(package=pkg, attrpath=path)
         return pkg
 
     return wrapped
@@ -356,6 +377,7 @@ def make_suggestion(
         in_issue_draft: bool = False,
         age: timedelta = timedelta(0),
         algorithm_version: int | None = None,
+        packages: dict[NixDerivation, Package] = {},
     ) -> CVEDerivationClusterProposal:
         suggestion = CVEDerivationClusterProposal.objects.create(
             status=status,
@@ -380,6 +402,19 @@ def make_suggestion(
                 derivation=drv,
                 provenance_flags=provenance,
             )
+
+        package_flags: dict[Package, int] = defaultdict(int)
+        for drv, package in packages.items():
+            PackageDerivation.objects.create(derivation=drv, package=package)
+            package_flags[package] |= drvs[drv]
+        PackageClusterProposalLink.objects.bulk_create(
+            PackageClusterProposalLink(
+                proposal=suggestion,
+                package=package,
+                provenance_flags=ProvenanceFlags(flags),
+            )
+            for package, flags in package_flags.items()
+        )
 
         return suggestion
 
