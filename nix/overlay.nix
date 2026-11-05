@@ -6,6 +6,15 @@ in
 {
   python3 = prev.python3.override {
     packageOverrides = pyfinal: _pyprev: {
+      asgiref = _pyprev.asgiref.overridePythonAttrs (old: rec {
+        version = "3.13.0";
+        src = final.fetchFromGitHub {
+          owner = "django";
+          repo = "asgiref";
+          tag = version;
+          hash = "sha256-Qsg0PwD6XYZkcBIcnwEjPC+2fCro35MQyXMPWm64014=";
+        };
+      });
       psycopg2 = pyfinal.psycopg;
       # FIXME(@fricklerhandwerk): remove once upstream fix is merged into django-pgpubsub
       # https://github.com/PaulGilmartin/django-pgpubsub/pull/89
